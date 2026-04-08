@@ -68,15 +68,19 @@ const TeacherDashboard = () => {
 
         const q = query(
             collection(db, 'attendance'),
-            where('classId', '==', selectedClass.id),
-            orderBy('timestamp', 'desc')
+            where('classId', '==', selectedClass.id)
+            // Removed orderBy to avoid mandatory Firestore Index requirement
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const data = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            }));
+            })).sort((a, b) => {
+                const timeA = a.timestamp?.seconds || 0;
+                const timeB = b.timestamp?.seconds || 0;
+                return timeB - timeA;
+            });
             setActiveAttendance(data);
 
             // Update stats based on live data
@@ -88,6 +92,32 @@ const TeacherDashboard = () => {
 
         return unsubscribe;
     }, [selectedClass?.id]);
+
+    // Persistent Class Recovery: Fetch latest active class on load
+    useEffect(() => {
+        if (!userData?.uid) return;
+
+        const q = query(
+            collection(db, 'classes'),
+            where('teacherId', '==', userData.uid),
+            where('status', '==', 'active')
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            if (!snapshot.empty) {
+                const classes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+                    .sort((a, b) => new Date(b.createdAt?.seconds ? b.createdAt.toDate() : b.createdAt) - new Date(a.createdAt?.seconds ? a.createdAt.toDate() : a.createdAt));
+
+                const classDoc = classes[0];
+                setSelectedClass({
+                    ...classDoc,
+                    qrCode: classDoc.id
+                });
+            }
+        });
+
+        return unsubscribe;
+    }, [userData?.uid]);
 
     const handleStartClass = async () => {
         try {
@@ -117,14 +147,25 @@ const TeacherDashboard = () => {
     };
 
     const exportToExcel = () => {
-        const ws = XLSX.utils.json_to_sheet([
-            { Name: 'John Doe', Status: 'Present', Time: '09:05 AM' },
-            { Name: 'Jane Smith', Status: 'Late', Time: '09:12 AM' },
-        ]);
+        if (activeAttendance.length === 0) {
+            toast.error("No data to export!");
+            return;
+        }
+
+        const exportData = activeAttendance.map(record => ({
+            'Student Name': record.studentName || 'N/A',
+            'Email': record.studentEmail || 'N/A',
+            'Subject': record.subject || 'Session',
+            'Date': record.date || 'N/A',
+            'Time': record.time || 'N/A',
+            'Status': record.status || 'Present'
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Attendance");
-        XLSX.writeFile(wb, "Attendance_Report.xlsx");
-        toast.success('Report downloaded!');
+        XLSX.writeFile(wb, `Attendance_${selectedClass?.subject || 'Report'}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+        toast.success('Excel Report downloaded!');
     };
 
     return (
@@ -249,7 +290,7 @@ const TeacherDashboard = () => {
                                 <h3 className="text-lg font-bold text-primary mb-2">{selectedClass?.subject}</h3>
                                 <div className="flex items-center gap-2 text-gray-500 mb-6">
                                     <Clock className="w-4 h-4" />
-                                    <span>Started at {format(selectedClass?.startTime, 'hh:mm a')}</span>
+                                    <span>Started at {selectedClass?.startTime ? format(new Date(selectedClass.startTime), 'hh:mm a') : 'Now'}</span>
                                 </div>
 
                                 <div className="w-full p-4 bg-amber-50 rounded-2xl border border-amber-100 mb-6">

@@ -16,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
     doc,
     getDoc,
+    setDoc,
     addDoc,
     collection,
     serverTimestamp,
@@ -70,20 +71,24 @@ const ScannerPage = () => {
                     return;
                 }
 
-                // 3. Mark Attendance
+                // 3. Mark Attendance with a Unique ID (studentId_classId)
+                // This prevents duplicates even if the check above fails
+                const attendanceId = `${userData.uid}_${classId}`;
                 const attendanceRecord = {
                     studentId: userData.uid,
                     studentName: userData.name,
                     studentEmail: userData.email,
                     classId: classId,
+                    teacherId: classData.teacherId,
+                    teacherName: classData.teacherName,
                     subject: classData.subject,
                     date: format(new Date(), 'yyyy-MM-dd'),
                     time: format(new Date(), 'hh:mm a'),
-                    status: 'Present', // You can add late logic here if needed
+                    status: 'Present',
                     timestamp: serverTimestamp(),
                 };
 
-                await addDoc(collection(db, 'attendance'), attendanceRecord);
+                await setDoc(doc(db, 'attendance', attendanceId), attendanceRecord);
 
                 setScannedClass(classData);
                 setResult(classId);
