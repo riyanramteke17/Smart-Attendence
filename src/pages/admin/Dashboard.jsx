@@ -260,7 +260,11 @@ const AdminUsers = () => {
     };
 
     useEffect(() => {
-        return onSnapshot(collection(db, 'users'), snap => setUsers(snap.docs.map(d => ({ uid: d.id, ...d.data() }))));
+        return onSnapshot(collection(db, 'users'), snap => {
+            const usersList = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
+                .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            setUsers(usersList);
+        });
     }, []);
 
     const filtered = users.filter(u => u.name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase()));

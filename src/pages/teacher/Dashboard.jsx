@@ -233,7 +233,15 @@ const TeacherClasses = ({ userData }) => {
     useEffect(() => {
         if (!userData?.uid) return;
         const q = query(collection(db, 'classes'), where('teacherId', '==', userData.uid));
-        return onSnapshot(q, snap => setClasses(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        return onSnapshot(q, snap => {
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => {
+                    const tA = a.createdAt?.seconds || new Date(a.startTime || 0).getTime();
+                    const tB = b.createdAt?.seconds || new Date(b.startTime || 0).getTime();
+                    return tB - tA;
+                });
+            setClasses(data);
+        });
     }, [userData?.uid]);
 
     return (
@@ -263,7 +271,15 @@ const TeacherReports = ({ userData }) => {
     useEffect(() => {
         if (!userData?.uid) return;
         const q = query(collection(db, 'attendance'), where('teacherId', '==', userData.uid));
-        return onSnapshot(q, snap => setAttendance(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        return onSnapshot(q, snap => {
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => {
+                    const tA = a.timestamp?.seconds || new Date(a.date + ' ' + a.time).getTime();
+                    const tB = b.timestamp?.seconds || new Date(b.date + ' ' + b.time).getTime();
+                    return tB - tA;
+                });
+            setAttendance(data);
+        });
     }, [userData?.uid]);
 
     return (

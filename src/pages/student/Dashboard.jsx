@@ -57,7 +57,12 @@ const StudentDashboard = () => {
         if (!userData?.uid) return;
         const q = query(collection(db, 'attendance'), where('studentId', '==', userData.uid));
         return onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                .sort((a, b) => {
+                    const timeA = a.timestamp?.seconds || new Date(a.date + ' ' + a.time).getTime() || 0;
+                    const timeB = b.timestamp?.seconds || new Date(b.date + ' ' + b.time).getTime() || 0;
+                    return timeB - timeA;
+                });
             setHistory(data);
             setLoading(false);
         });
