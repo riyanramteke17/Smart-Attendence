@@ -10,7 +10,8 @@ import {
     Calendar,
     MoreVertical,
     FileText,
-    QrCode
+    QrCode,
+    Users as UsersIcon
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/DashboardLayout';
 import { Button, Card } from '../../components/UI';
@@ -56,6 +57,10 @@ const TeacherHome = ({ userData }) => {
         { label: 'Absent', value: '0', icon: XCircle, color: 'red' },
     ]);
 
+    const subjects = ['Machine Learning', 'Deep Learning', 'Neural Networks', 'Computer Vision', 'NLP', 'Reinforcement Learning'];
+    const [showSubjectModal, setShowSubjectModal] = useState(false);
+    const [newClassSubject, setNewClassSubject] = useState(subjects[0]);
+
     const chartData = [
         { name: 'Mon', present: 40, late: 2, absent: 3 },
         { name: 'Tue', present: 38, late: 5, absent: 2 },
@@ -90,10 +95,19 @@ const TeacherHome = ({ userData }) => {
         return unsubscribe;
     }, [userData?.uid]);
 
-    const handleStartClass = async () => {
+    const handleStartClassClick = () => {
+        setShowSubjectModal(true);
+    };
+
+    const confirmStartClass = async () => {
+        if (!newClassSubject) {
+            toast.error("Please select a subject");
+            return;
+        }
+        setShowSubjectModal(false);
         try {
             const classData = {
-                subject: 'Data Structures',
+                subject: newClassSubject,
                 teacherId: userData.uid,
                 teacherName: userData.name,
                 startTime: new Date().toISOString(),
@@ -103,7 +117,7 @@ const TeacherHome = ({ userData }) => {
             const docRef = await addDoc(collection(db, 'classes'), classData);
             setSelectedClass({ id: docRef.id, ...classData, qrCode: docRef.id });
             setShowQRModal(true);
-            toast.success('Class started! Students can now scan.');
+            toast.success(`${newClassSubject} class started! Students can now scan.`);
         } catch (error) {
             toast.error('Failed to start class');
             console.error(error);
@@ -136,7 +150,7 @@ const TeacherHome = ({ userData }) => {
                 </div>
                 <div className="flex items-center gap-3">
                     <Button variant="secondary" onClick={exportToExcel}><Download className="w-4 h-4" />Export</Button>
-                    <Button onClick={handleStartClass}><Plus className="w-4 h-4" />Start New Class</Button>
+                    <Button onClick={handleStartClassClick}><Plus className="w-4 h-4" />Start New Class</Button>
                 </div>
             </div>
 
@@ -212,8 +226,8 @@ const TeacherHome = ({ userData }) => {
                         <div className="bg-white p-6 rounded-3xl shadow-inner mb-6">
                             <QRCode value={selectedClass?.qrCode || ''} size={256} />
                         </div>
-                        <h3 className="text-lg font-bold text-primary mb-2">{selectedClass?.subject}</h3>
-                        <div className="flex items-center gap-2 text-gray-500 mb-6">
+                        <h3 className="text-lg font-bold text-primary mb-2 text-center">{selectedClass?.subject}</h3>
+                        <div className="flex items-center justify-center gap-2 text-gray-500 mb-6">
                             <Clock className="w-4 h-4" />
                             <span>Started at {selectedClass?.startTime ? format(new Date(selectedClass.startTime), 'hh:mm a') : 'Now'}</span>
                         </div>
@@ -224,12 +238,47 @@ const TeacherHome = ({ userData }) => {
                     </Card>
                 </div>
             )}
+
+            {/* Subject Selection Modal */}
+            {showSubjectModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div onClick={() => setShowSubjectModal(false)} className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+                    <Card className="max-w-md w-full relative z-10">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-gray-800">Select Subject</h2>
+                            <button onClick={() => setShowSubjectModal(false)} className="text-gray-400 hover:text-gray-600"><XCircle className="w-6 h-6" /></button>
+                        </div>
+                        <div className="space-y-4 mb-6">
+                            {subjects.map(subject => (
+                                <div 
+                                    key={subject}
+                                    onClick={() => setNewClassSubject(subject)}
+                                    className={cn(
+                                        "p-4 rounded-xl border-2 cursor-pointer transition-all flex items-center justify-between",
+                                        newClassSubject === subject ? "border-primary bg-primary/5" : "border-gray-100 hover:border-gray-200"
+                                    )}
+                                >
+                                    <span className={cn("font-bold", newClassSubject === subject ? "text-primary" : "text-gray-700")}>{subject}</span>
+                                    {newClassSubject === subject && <CheckCircle2 className="w-5 h-5 text-primary" />}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex gap-3">
+                            <Button variant="outline" className="flex-1" onClick={() => setShowSubjectModal(false)}>Cancel</Button>
+                            <Button className="flex-1" onClick={confirmStartClass}>Start Class</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 };
 
 const TeacherClasses = ({ userData }) => {
     const [classes, setClasses] = useState([]);
+    const [selectedClassReport, setSelectedClassReport] = useState(null);
+    const [classAttendance, setClassAttendance] = useState([]);
+
     useEffect(() => {
         if (!userData?.uid) return;
         const q = query(collection(db, 'classes'), where('teacherId', '==', userData.uid));
@@ -243,6 +292,20 @@ const TeacherClasses = ({ userData }) => {
             setClasses(data);
         });
     }, [userData?.uid]);
+
+    useEffect(() => {
+        if (!selectedClassReport) {
+            setClassAttendance([]);
+            return;
+        }
+        const q = query(collection(db, 'attendance'), where('classId', '==', selectedClassReport.id));
+        const unsub = onSnapshot(q, snap => {
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+            setClassAttendance(data);
+        });
+        return unsub;
+    }, [selectedClassReport]);
 
     return (
         <div className="flex flex-col gap-8">
@@ -258,10 +321,49 @@ const TeacherClasses = ({ userData }) => {
                             <h3 className="font-bold text-gray-800">{cls.subject}</h3>
                         </div>
                         <p className="text-xs text-gray-400">Status: <span className={cls.status === 'active' ? 'text-green-500 font-bold' : 'text-gray-400'}>{cls.status}</span></p>
-                        <p className="text-xs text-gray-400 mt-1">Started: {cls.startTime ? format(new Date(cls.startTime), 'MMM dd, hh:mm a') : '—'}</p>
+                        <p className="text-xs text-gray-400 mt-1 mb-4">Started: {cls.startTime ? format(new Date(cls.startTime), 'MMM dd, hh:mm a') : '—'}</p>
+                        <Button variant="outline" className="w-full py-2 text-sm flex items-center justify-center gap-2" onClick={() => setSelectedClassReport(cls)}>
+                            <UsersIcon className="w-4 h-4" /> View Attendance
+                        </Button>
                     </Card>
                 ))}
             </div>
+
+            {selectedClassReport && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div onClick={() => setSelectedClassReport(null)} className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+                    <Card className="max-w-2xl w-full relative z-10 flex flex-col max-h-[80vh]">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-800">Attendance Report</h2>
+                                <p className="text-sm text-gray-500">{selectedClassReport.subject} • {selectedClassReport.startTime ? format(new Date(selectedClassReport.startTime), 'MMM dd, yyyy hh:mm a') : ''}</p>
+                            </div>
+                            <button onClick={() => setSelectedClassReport(null)} className="text-gray-400 hover:text-gray-600"><XCircle className="w-6 h-6" /></button>
+                        </div>
+                        
+                        <div className="overflow-y-auto flex-1 pr-2">
+                            {classAttendance.length === 0 ? (
+                                <p className="text-center text-gray-400 py-8">No students marked attendance for this class.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg font-semibold text-gray-600 text-sm">
+                                        <span className="flex-1">Student</span>
+                                        <span className="w-24 text-right">Time</span>
+                                        <span className="w-24 text-right">Status</span>
+                                    </div>
+                                    {classAttendance.map(a => (
+                                        <div key={a.id} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 text-sm">
+                                            <div className="flex-1 font-medium text-gray-800">{a.studentName || 'Unknown Student'} <span className="block text-xs text-gray-400 font-normal mt-0.5">{a.studentEmail}</span></div>
+                                            <div className="w-24 text-right text-gray-500">{a.time || '—'}</div>
+                                            <div className="w-24 text-right"><span className="bg-green-50 text-green-600 text-[10px] font-black uppercase px-2 py-1 rounded-full">{a.status || 'Present'}</span></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 };
