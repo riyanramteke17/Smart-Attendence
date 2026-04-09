@@ -155,17 +155,6 @@ export function AuthProvider({ children }) {
         try {
             setLoading(true);
             const result = await signInWithPopup(auth, provider);
-            const email = result.user?.email || '';
-
-            // ❌ Block navgurukul.org domain users
-            if (email.endsWith('@navgurukul.org')) {
-                await signOut(auth);
-                setLoading(false);
-                const err = new Error('navgurukul.org domain ke accounts is app mein allowed nahi hain.');
-                err.code = 'auth/unauthorized-domain-email';
-                throw err;
-            }
-
             return result.user;
         } catch (error) {
             console.error("Popup error:", error);

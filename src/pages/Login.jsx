@@ -22,12 +22,7 @@ const Login = () => {
             await loginWithGoogle();
         } catch (error) {
             console.error("Login attempt failed:", error);
-            if (error.code === 'auth/unauthorized-domain-email') {
-                toast.error('❌ NavGurukul.org accounts is app mein allowed nahi hain.', {
-                    duration: 5000,
-                    style: { fontWeight: '600' }
-                });
-            } else if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+            if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
                 toast.error('Login failed. Please try again.');
             }
         }
