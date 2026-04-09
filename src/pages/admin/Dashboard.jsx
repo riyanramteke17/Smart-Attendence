@@ -66,7 +66,8 @@ const AdminHome = () => {
     useEffect(() => {
         setLoading(true);
         const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-            const usersList = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }));
+            // ✅ Use 'userDoc' to avoid shadowing the firebase `doc` function
+            const usersList = snapshot.docs.map(userDoc => ({ uid: userDoc.id, ...userDoc.data() }));
 
             let repairedAny = false;
             usersList.forEach(u => {
@@ -75,6 +76,7 @@ const AdminHome = () => {
                 const isOutOfSync = u.isAdmin !== (currentRole === 'admin') || u.isTeacher !== (currentRole === 'teacher') || u.isStudent !== (currentRole === 'student') || !u.id || !u.uid;
                 if (isOutOfSync) {
                     repairedAny = true;
+                    // ✅ `doc` here correctly refers to the firebase function
                     setDoc(doc(db, 'users', u.uid), { id: u.uid, uid: u.uid, role: currentRole, isAdmin: currentRole === 'admin', isTeacher: currentRole === 'teacher', isStudent: currentRole === 'student' }, { merge: true }).catch(() => {});
                 }
             });
