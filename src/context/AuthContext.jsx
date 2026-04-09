@@ -1,12 +1,9 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
     onAuthStateChanged,
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
     signOut,
     GoogleAuthProvider,
     signInWithPopup,
-    getRedirectResult
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -18,24 +15,65 @@ export function AuthProvider({ children }) {
     const [userData, setUserData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [firestoreError, setFirestoreError] = useState(null);
+    
+    // Track if we are currently creating a profile to avoid race conditions
+    const isCreatingProfile = useRef(false);
 
-    // 1. Initial Auth Result Check (for redirects)
     useEffect(() => {
-        const checkRedirect = async () => {
-            try {
-                await getRedirectResult(auth);
-            } catch (error) {
-                console.error("Redirect recovery error:", error);
-                setFirestoreError(`Auth Redirect Error: ${error.message}`);
-            }
-        };
-        checkRedirect();
-
-        const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+        console.log("🛠️ AuthProvider Mounted");
+        
+        const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
             console.log("🔐 Auth State Changed:", u?.email || "No User");
             setUser(u);
+            
             if (!u) {
                 setUserData(null);
+                setLoading(false);
+                return;
+            }
+
+            // User is logged in, now sync/create profile
+            try {
+                const userRef = doc(db, 'users', u.uid);
+                
+                // Initial check to see if we need to create the profile
+                const snap = await getDoc(userRef);
+                
+                if (!snap.exists() && !isCreatingProfile.current) {
+                    isCreatingProfile.current = true;
+                    console.log("🆕 New user detected! Creating profile for:", u.email);
+                    
+                    const isMainAdmin = u.email === 'riyanramteke17@gmail.com';
+                    const newUser = {
+                        id: u.uid,
+                        uid: u.uid,
+                        name: u.displayName || u.email.split('@')[0],
+                        email: u.email,
+                        role: isMainAdmin ? 'admin' : 'student',
+                        isAdmin: isMainAdmin,
+                        isTeacher: false,
+                        isStudent: !isMainAdmin,
+                        createdAt: new Date().toISOString(),
+                        lastLogin: new Date().toISOString(),
+                    };
+                    
+                    await setDoc(userRef, newUser);
+                    console.log("✅ New profile created successfully");
+                    setUserData(newUser);
+                    // Don't set loading(false) yet, let the snapshot listener take over to be consistent
+                } else if (snap.exists()) {
+                    console.log("📄 Profile found for:", u.email);
+                    const currentData = snap.data();
+                    
+                    // SuperAdmin Override (Check email just in case)
+                    if (u.email === 'riyanramteke17@gmail.com' && currentData.role !== 'admin') {
+                        console.log("🛡️ SuperAdmin Override triggered");
+                        await setDoc(userRef, { role: 'admin', isAdmin: true }, { merge: true });
+                    }
+                }
+            } catch (err) {
+                console.error("❌ Profile initialization error:", err);
+                setFirestoreError(`Database Sync Error: ${err.message}`);
                 setLoading(false);
             }
         });
@@ -43,111 +81,38 @@ export function AuthProvider({ children }) {
         return () => unsubscribeAuth();
     }, []);
 
-    // 2. Proactive Profile Initialization & Sync
+    // Separated Listener Effect for real-time updates
     useEffect(() => {
         if (!user) return;
 
-        let isMounted = true;
-        setLoading(true);
-        setFirestoreError(null);
-
-        const initializeUser = async () => {
-            try {
-                console.log("📂 Proactively checking profile for:", user.email);
-                const userRef = doc(db, 'users', user.uid);
-                const snap = await getDoc(userRef);
-
-                if (!snap.exists()) {
-                    console.log("🆕 No profile found, creating fresh student profile...");
-                    const isMainAdmin = user.email === 'riyanramteke17@gmail.com';
-                    const newUser = {
-                        id: user.uid,
-                        uid: user.uid,
-                        name: user.displayName || user.email.split('@')[0],
-                        email: user.email,
-                        role: isMainAdmin ? 'admin' : 'student',
-                        isAdmin: isMainAdmin,
-                        isTeacher: false,
-                        isStudent: !isMainAdmin,
-                        createdAt: new Date().toISOString(),
-                    };
-                    await setDoc(userRef, newUser);
-                    console.log("✅ Profile created via getDoc check!");
-                    if (isMounted) {
-                        setUserData(newUser);
-                        setLoading(false);
-                    }
-                } else {
-                    console.log("📄 Profile exists, starting real-time sync...");
-                    // No need to set loading(false) here, onSnapshot will do it
-                }
-            } catch (err) {
-                console.error("❌ Initial profile check failed:", err);
-                if (isMounted) {
-                    setFirestoreError(`Database Access Error: ${err.message}. Please check your internet and Firestore Rules.`);
-                    setLoading(false);
-                }
-            }
-        };
-
-        initializeUser();
-
-        // Start Real-time Listener
+        console.log("📡 Starting Real-time sync for:", user.email);
         const unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
-            if (!isMounted) return;
-
             if (snapshot.exists()) {
                 const data = snapshot.data();
-                const currentRole = String(data.role || 'student').toLowerCase();
-
-                // SuperAdmin Override
-                let finalRole = currentRole;
-                if (user.email === 'riyanramteke17@gmail.com' && currentRole !== 'admin') {
-                    finalRole = 'admin';
-                }
-
-                const enriched = {
+                console.log("📥 Received profile update:", data.role);
+                
+                setUserData({
                     ...data,
-                    id: user.uid,
-                    uid: user.uid,
-                    role: finalRole,
-                    isAdmin: finalRole === 'admin',
-                    isTeacher: finalRole === 'teacher',
-                    isStudent: finalRole === 'student',
-                };
-
-                setUserData(enriched);
+                    uid: user.uid, // Ensure UID consistency
+                    id: user.uid
+                });
                 setLoading(false);
                 setFirestoreError(null);
-
-                // Background Heal (Silent)
-                const isOutOfSync = !data.id || !data.uid || data.role !== finalRole;
-                if (isOutOfSync) {
-                    setDoc(doc(db, 'users', user.uid), {
-                        id: user.uid,
-                        uid: user.uid,
-                        role: finalRole,
-                        isAdmin: finalRole === 'admin',
-                        isTeacher: finalRole === 'teacher',
-                        isStudent: finalRole === 'student'
-                    }, { merge: true }).catch(e => console.warn("Background heal blocked by rules, ignoring."));
-                }
+            } else if (!isCreatingProfile.current) {
+                // Document doesn't exist and we aren't creating it? 
+                // This shouldn't happen with the initializeUser logic above, 
+                // but if it does, move to student dashboard with null data or similar
+                console.warn("⚠️ Profile document missing from Firestore");
+                // We keep loading=true if we assume initializeUser will create it soon
             }
         }, (err) => {
             console.error("📡 Snapshot listener error:", err);
-            if (isMounted) {
-                setFirestoreError(`Sync Error: ${err.message}`);
-                setLoading(false);
-            }
+            setFirestoreError(`Real-time Sync Error: ${err.message}`);
+            setLoading(false);
         });
 
-        return () => {
-            isMounted = false;
-            unsubscribeProfile();
-        };
+        return () => unsubscribeProfile();
     }, [user]);
-
-    const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
 
     const loginWithGoogle = async () => {
         const provider = new GoogleAuthProvider();
@@ -157,26 +122,35 @@ export function AuthProvider({ children }) {
             const result = await signInWithPopup(auth, provider);
             return result.user;
         } catch (error) {
-            console.error("Popup error:", error);
+            console.error("Google Login Error:", error);
             setLoading(false);
             throw error;
         }
     };
 
-    const register = async (email, password, name, role = 'student') => {
+    const logout = async () => {
         setLoading(true);
-        const res = await createUserWithEmailAndPassword(auth, email, password);
-        return res;
+        try {
+            await signOut(auth);
+            setUserData(null);
+            setUser(null);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const logout = () => signOut(auth);
-
     return (
-        <AuthContext.Provider value={{ user, userData, login, loginWithGoogle, register, logout, loading, firestoreError }}>
+        <AuthContext.Provider value={{ 
+            user, 
+            userData, 
+            loginWithGoogle, 
+            logout, 
+            loading, 
+            firestoreError 
+        }}>
             {children}
         </AuthContext.Provider>
     );
 }
 
-// Keep backward-compatible export for any files still importing useAuth from here
 export const useAuth = () => useContext(AuthContext);
