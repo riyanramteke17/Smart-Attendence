@@ -7,10 +7,22 @@
   --glass-border: rgba(255, 255, 255, 0.2);
 }
 
+/* ── Base ─────────────────────────────────────────── */
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 body {
   @apply antialiased overflow-x-hidden bg-white;
 }
 
+/* Safe area padding for bottom nav (iPhone notch etc.) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+}
+
+/* ── Reusable Components ──────────────────────────── */
 .glass-card {
   @apply bg-white bg-opacity-70 backdrop-blur-md border border-white border-opacity-20 shadow-xl rounded-2xl;
 }
@@ -27,15 +39,31 @@ body {
   @apply bg-gradient-primary bg-clip-text text-transparent;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
+/* ── Mobile Touch Improvements ────────────────────── */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* Prevent text resize on mobile rotation */
+@media screen and (max-width: 768px) {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors;
+/* ── Custom Scrollbar (Desktop only) ─────────────── */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
 }

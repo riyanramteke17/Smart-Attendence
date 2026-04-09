@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
     Scan,
     Clock,
-    Calendar as CalendarIcon,
     CheckCircle2,
     TrendingUp,
     History,
-    BookOpen
+    BookOpen,
+    XCircle
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/DashboardLayout';
 import { Button, Card } from '../../components/UI';
@@ -32,60 +32,47 @@ import {
     onSnapshot,
     query,
     where,
-    orderBy
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
 const StudentDashboard = () => {
-    console.log("StudentDashboard Mounting. UserData:", useAuth()?.userData?.email);
     const navigate = useNavigate();
     const { userData } = useAuth();
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
 
     if (!userData) {
-        console.warn("StudentDashboard: No userData yet!");
         return (
             <div className="h-screen flex items-center justify-center bg-white p-6">
                 <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-gray-500 font-bold text-lg">Waiting for Profile Sync...</p>
+                    <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <p className="text-gray-500 font-bold text-lg">Syncing Profile...</p>
                 </div>
             </div>
         );
     }
 
-    // Fetch real attendance history
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     useEffect(() => {
         if (!userData?.uid) return;
-
-        const q = query(
-            collection(db, 'attendance'),
-            where('studentId', '==', userData.uid)
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+        const q = query(collection(db, 'attendance'), where('studentId', '==', userData.uid));
+        return onSnapshot(q, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setHistory(data);
             setLoading(false);
         });
-
-        return unsubscribe;
     }, [userData?.uid]);
 
-    // Calculate real stats
+    // Stats
+    const totalCount = history.length || 1;
     const presentCount = history.filter(h => h.status === 'Present').length;
     const lateCount = history.filter(h => h.status === 'Late').length;
     const absentCount = history.filter(h => h.status === 'Absent').length;
-    const totalCount = history.length || 1; // Prevent div by 0
 
     const overallStats = [
-        { name: 'Present', value: totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0, color: '#3B82F6' },
-        { name: 'Late', value: totalCount > 0 ? Math.round((lateCount / totalCount) * 100) : 0, color: '#F59E0B' },
-        { name: 'Absent', value: totalCount > 0 ? Math.round((absentCount / totalCount) * 100) : 0, color: '#EF4444' },
+        { name: 'Present', value: Math.round((presentCount / totalCount) * 100), color: '#3B82F6' },
+        { name: 'Late', value: Math.round((lateCount / totalCount) * 100), color: '#F59E0B' },
+        { name: 'Absent', value: Math.round((absentCount / totalCount) * 100), color: '#EF4444' },
     ];
 
     const attendanceTrend = [
@@ -96,40 +83,57 @@ const StudentDashboard = () => {
         { date: 'Fri', attendance: 0 },
     ];
 
+    const statusStyles = {
+        Present: 'bg-green-100 text-green-600',
+        Late: 'bg-amber-100 text-amber-600',
+        Absent: 'bg-red-100 text-red-600',
+    };
+
     return (
         <DashboardLayout role="student">
-            <div className="flex flex-col gap-8">
-                {/* Header with Scan Button */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex flex-col gap-6 sm:gap-8">
+
+                {/* ── Header ──────────────────────────────── */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-800">Hello, {userData?.name || 'Student'}!</h1>
-                        <p className="text-gray-500 mt-1">Keep track of your attendance and performance.</p>
+                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
+                            Hello, {userData?.name?.split(' ')[0] || 'Student'}! 👋
+                        </h1>
+                        <p className="text-gray-500 mt-1 text-sm sm:text-base">Track your attendance and performance.</p>
                     </div>
                     <Button
-                        className="h-16 px-8 text-xl shadow-xl shadow-primary/20 animate-bounce-slow"
+                        className="h-12 sm:h-14 px-6 sm:px-8 text-base sm:text-lg shadow-xl shadow-primary/20 w-full sm:w-auto"
                         onClick={() => navigate('/student/scan')}
                     >
-                        <Scan className="w-6 h-6" />
+                        <Scan className="w-5 h-5" />
                         Scan QR Code
                     </Button>
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Quick Stats */}
-                    <Card className="lg:col-span-1 flex flex-col items-center justify-center py-10">
-                        <div className="h-[200px] w-full relative">
+                {/* ── Quick Stats Row (mobile) ─────────────── */}
+                <div className="grid grid-cols-3 gap-3 sm:hidden">
+                    <div className="bg-blue-50 rounded-2xl p-3 text-center">
+                        <p className="text-2xl font-black text-blue-600">{presentCount}</p>
+                        <p className="text-xs text-blue-400 font-medium mt-0.5">Present</p>
+                    </div>
+                    <div className="bg-amber-50 rounded-2xl p-3 text-center">
+                        <p className="text-2xl font-black text-amber-600">{lateCount}</p>
+                        <p className="text-xs text-amber-400 font-medium mt-0.5">Late</p>
+                    </div>
+                    <div className="bg-red-50 rounded-2xl p-3 text-center">
+                        <p className="text-2xl font-black text-red-600">{absentCount}</p>
+                        <p className="text-xs text-red-400 font-medium mt-0.5">Absent</p>
+                    </div>
+                </div>
+
+                {/* ── Charts (hidden on mobile quick stats replace them) ── */}
+                <div className="hidden sm:grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+                    {/* Pie Chart */}
+                    <Card className="lg:col-span-1 flex flex-col items-center justify-center py-6">
+                        <div className="h-[180px] w-full relative">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    <Pie
-                                        data={overallStats}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={80}
-                                        paddingAngle={5}
-                                        dataKey="value"
-                                    >
+                                    <Pie data={overallStats} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={5} dataKey="value">
                                         {overallStats.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={entry.color} />
                                         ))}
@@ -138,14 +142,14 @@ const StudentDashboard = () => {
                                 </PieChart>
                             </ResponsiveContainer>
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                                <span className="text-3xl font-bold text-gray-800">85%</span>
+                                <span className="text-3xl font-bold text-gray-800">{overallStats[0].value}%</span>
                                 <span className="text-xs text-gray-400 font-medium">Overall</span>
                             </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-4 w-full mt-6">
+                        <div className="grid grid-cols-3 gap-4 w-full mt-4">
                             {overallStats.map((s) => (
                                 <div key={s.name} className="flex flex-col items-center">
-                                    <div className="w-2 h-2 rounded-full mb-1" style={{ backgroundColor: s.color }}></div>
+                                    <div className="w-2 h-2 rounded-full mb-1" style={{ backgroundColor: s.color }} />
                                     <span className="text-xs text-gray-500 font-medium">{s.name}</span>
                                     <span className="text-sm font-bold text-gray-800">{s.value}%</span>
                                 </div>
@@ -153,13 +157,13 @@ const StudentDashboard = () => {
                         </div>
                     </Card>
 
-                    {/* Attendance Trend */}
+                    {/* Trend Chart */}
                     <Card className="lg:col-span-2">
-                        <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                             <TrendingUp className="w-5 h-5 text-primary" />
                             Weekly Attendance Trend
                         </h3>
-                        <div className="h-[250px] w-full">
+                        <div className="h-[220px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={attendanceTrend}>
                                     <defs>
@@ -171,9 +175,7 @@ const StudentDashboard = () => {
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#64748B' }} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748B' }} />
-                                    <Tooltip
-                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                                    />
+                                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
                                     <Area type="monotone" dataKey="attendance" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorAtt)" />
                                 </AreaChart>
                             </ResponsiveContainer>
@@ -181,16 +183,49 @@ const StudentDashboard = () => {
                     </Card>
                 </div>
 
-                {/* History Table */}
+                {/* ── Attendance History ───────────────────── */}
                 <Card>
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                            <History className="w-5 h-5 text-primary" />
+                    <div className="flex items-center justify-between mb-5">
+                        <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <History className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                             Recent Attendance
                         </h3>
-                        <button className="text-primary text-sm font-semibold hover:underline">Download PDF</button>
+                        <span className="text-xs text-gray-400 font-medium">{history.length} records</span>
                     </div>
-                    <div className="overflow-x-auto">
+
+                    {history.length === 0 && !loading && (
+                        <div className="py-12 text-center text-gray-400">
+                            <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                            <p className="font-medium text-sm">No attendance records yet.</p>
+                            <p className="text-xs mt-1">Scan a QR code to mark attendance.</p>
+                        </div>
+                    )}
+
+                    {/* === MOBILE: Card List === */}
+                    <div className="sm:hidden space-y-3">
+                        {history.map((row, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                        <BookOpen className="w-4 h-4 text-primary" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-gray-800 text-sm truncate">{row.subject || '—'}</p>
+                                        <p className="text-xs text-gray-400">{row.date || '—'} · {row.time || '—'}</p>
+                                    </div>
+                                </div>
+                                <span className={cn(
+                                    'px-2.5 py-1 rounded-full text-xs font-bold shrink-0 ml-2',
+                                    statusStyles[row.status] || 'bg-gray-100 text-gray-500'
+                                )}>
+                                    {row.status || '—'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* === DESKTOP: Table === */}
+                    <div className="hidden sm:block overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="border-b border-gray-100">
@@ -212,18 +247,11 @@ const StudentDashboard = () => {
                                             </div>
                                         </td>
                                         <td className="py-4 text-gray-500 text-sm">
-                                            {row.date ? (
-                                                isNaN(new Date(row.date).getTime()) ? row.date : format(new Date(row.date), 'MMM dd, yyyy')
-                                            ) : 'No date'}
+                                            {row.date ? (isNaN(new Date(row.date).getTime()) ? row.date : format(new Date(row.date), 'MMM dd, yyyy')) : '—'}
                                         </td>
                                         <td className="py-4 text-gray-500 text-sm">{row.time}</td>
                                         <td className="py-4">
-                                            <span className={cn(
-                                                "px-3 py-1 rounded-full text-xs font-bold",
-                                                row.status === 'Present' && "bg-green-100 text-green-600",
-                                                row.status === 'Late' && "bg-amber-100 text-amber-600",
-                                                row.status === 'Absent' && "bg-red-100 text-red-600",
-                                            )}>
+                                            <span className={cn('px-3 py-1 rounded-full text-xs font-bold', statusStyles[row.status] || 'bg-gray-100 text-gray-500')}>
                                                 {row.status}
                                             </span>
                                         </td>

@@ -2,12 +2,10 @@ import React, { useState } from 'react';
 import QrScanner from 'react-qr-scanner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    X,
-    Camera,
     AlertCircle,
     CheckCircle2,
-    RotateCcw,
-    ArrowLeft
+    ArrowLeft,
+    Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -17,7 +15,6 @@ import {
     doc,
     getDoc,
     setDoc,
-    addDoc,
     collection,
     serverTimestamp,
     query,
@@ -29,7 +26,6 @@ import { format } from 'date-fns';
 
 const ScannerPage = () => {
     const { userData } = useAuth();
-    const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
     const [isScanning, setIsScanning] = useState(true);
     const [scannedClass, setScannedClass] = useState(null);
@@ -41,7 +37,6 @@ const ScannerPage = () => {
             const classId = data.text;
 
             try {
-                // 1. Verify Class Exists
                 const classDoc = await getDoc(doc(db, 'classes', classId));
 
                 if (!classDoc.exists()) {
@@ -57,7 +52,7 @@ const ScannerPage = () => {
                     return;
                 }
 
-                // 2. Prevent Double Attendance (Optional but good)
+                // Prevent duplicate attendance
                 const q = query(
                     collection(db, 'attendance'),
                     where('studentId', '==', userData.uid),
@@ -67,18 +62,15 @@ const ScannerPage = () => {
                 if (!existing.empty) {
                     toast.error('Attendance already marked!');
                     setScannedClass(classData);
-                    setResult(classId);
                     return;
                 }
 
-                // 3. Mark Attendance with a Unique ID (studentId_classId)
-                // This prevents duplicates even if the check above fails
                 const attendanceId = `${userData.uid}_${classId}`;
-                const attendanceRecord = {
+                await setDoc(doc(db, 'attendance', attendanceId), {
                     studentId: userData.uid,
                     studentName: userData.name,
                     studentEmail: userData.email,
-                    classId: classId,
+                    classId,
                     teacherId: classData.teacherId,
                     teacherName: classData.teacherName,
                     subject: classData.subject,
@@ -86,12 +78,9 @@ const ScannerPage = () => {
                     time: format(new Date(), 'hh:mm a'),
                     status: 'Present',
                     timestamp: serverTimestamp(),
-                };
-
-                await setDoc(doc(db, 'attendance', attendanceId), attendanceRecord);
+                });
 
                 setScannedClass(classData);
-                setResult(classId);
                 toast.success('Attendance Marked Successfully!');
             } catch (err) {
                 console.error(err);
@@ -103,30 +92,25 @@ const ScannerPage = () => {
 
     const handleError = (err) => {
         console.error(err);
-        setError('Camera permission denied or not found.');
-    };
-
-    const previewStyle = {
-        height: '100%',
-        width: '100%',
-        objectFit: 'cover',
+        setError('Camera access denied. Please allow camera permission and try again.');
     };
 
     return (
         <div className="min-h-screen bg-gray-950 flex flex-col text-white">
             {/* Header */}
-            <div className="p-6 flex items-center justify-between relative z-10 bg-gradient-to-b from-black/50 to-transparent">
+            <div className="px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between relative z-10 bg-gradient-to-b from-black/60 to-transparent">
                 <button
                     onClick={() => navigate('/student')}
-                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all"
+                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
                 >
                     <ArrowLeft className="w-5 h-5" />
                 </button>
-                <h1 className="text-xl font-bold">Attendance Scanner</h1>
-                <div className="w-10" /> {/* Spacer */}
+                <h1 className="text-lg sm:text-xl font-bold">Scan Attendance QR</h1>
+                <div className="w-10" />
             </div>
 
-            <div className="flex-1 relative flex flex-col items-center justify-center p-6">
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 gap-6">
                 <AnimatePresence mode="wait">
                     {isScanning ? (
                         <motion.div
@@ -134,86 +118,96 @@ const ScannerPage = () => {
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.9 }}
-                            className="w-full max-w-sm aspect-square relative rounded-[2rem] overflow-hidden border-4 border-white/20 shadow-2xl shadow-primary/20"
+                            className="w-full max-w-xs sm:max-w-sm"
                         >
-                            <QrScanner
-                                delay={300}
-                                style={previewStyle}
-                                onError={handleError}
-                                onScan={handleScan}
-                                constraints={{
-                                    video: { facingMode: "environment" }
-                                }}
-                            />
+                            {/* Scanner Box */}
+                            <div className="aspect-square relative rounded-[2rem] overflow-hidden border-4 border-white/20 shadow-2xl shadow-primary/30">
+                                <QrScanner
+                                    delay={300}
+                                    style={{ height: '100%', width: '100%', objectFit: 'cover' }}
+                                    onError={handleError}
+                                    onScan={handleScan}
+                                    constraints={{ video: { facingMode: 'environment' } }}
+                                />
 
-                            {/* Scanner Overlay UI */}
-                            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <div className="w-3/4 h-3/4 border-2 border-primary rounded-3xl relative">
-                                    <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-xl -translate-x-1 -translate-y-1"></div>
-                                    <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-xl translate-x-1 -translate-y-1"></div>
-                                    <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-xl -translate-x-1 translate-y-1"></div>
-                                    <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-xl translate-x-1 translate-y-1"></div>
+                                {/* Corner markers overlay */}
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <div className="w-3/4 h-3/4 relative">
+                                        <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white rounded-tl-xl" />
+                                        <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white rounded-tr-xl" />
+                                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white rounded-bl-xl" />
+                                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white rounded-br-xl" />
 
-                                    {/* Scanning Line Animation */}
-                                    <motion.div
-                                        animate={{ top: ['0%', '100%'] }}
-                                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                                        className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-primary to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)]"
-                                    />
+                                        {/* Scanning line */}
+                                        <motion.div
+                                            animate={{ top: ['0%', '100%'] }}
+                                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                                            className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent shadow-[0_0_12px_rgba(59,130,246,0.9)]"
+                                        />
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* Hint */}
+                            <p className="text-center text-white/50 font-medium text-sm mt-6 animate-pulse">
+                                Point camera at the QR code shown by your teacher
+                            </p>
+
+                            {/* Error */}
+                            {error && (
+                                <div className="mt-4 flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
+                                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                                    <p className="text-sm font-medium">{error}</p>
+                                </div>
+                            )}
                         </motion.div>
                     ) : (
                         <motion.div
                             key="result"
-                            initial={{ opacity: 0, y: 20 }}
+                            initial={{ opacity: 0, y: 30 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="w-full max-w-sm"
+                            className="w-full max-w-xs sm:max-w-sm"
                         >
-                            <Card className="bg-white p-10 flex flex-col items-center text-gray-800">
-                                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6">
-                                    <CheckCircle2 className="w-12 h-12 text-green-500" />
-                                </div>
-                                <h2 className="text-2xl font-bold mb-2 text-center">Success!</h2>
-                                <p className="text-gray-500 text-center mb-8">
-                                    Your attendance for <span className="text-primary font-bold">{scannedClass?.subject || 'the class'}</span> has been marked.
+                            <Card className="bg-white p-6 sm:p-10 flex flex-col items-center text-gray-800">
+                                <motion.div
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ type: 'spring', stiffness: 200, damping: 12 }}
+                                    className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-5"
+                                >
+                                    <CheckCircle2 className="w-11 h-11 text-green-500" />
+                                </motion.div>
+
+                                <h2 className="text-2xl font-black mb-2 text-center">Marked! 🎉</h2>
+                                <p className="text-gray-400 text-center text-sm mb-6">
+                                    Attendance for <span className="text-primary font-bold">{scannedClass?.subject || 'the class'}</span> has been recorded.
                                 </p>
-                                <div className="w-full grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-gray-50 rounded-2xl text-center">
+
+                                <div className="w-full grid grid-cols-2 gap-3 mb-6">
+                                    <div className="p-3 sm:p-4 bg-green-50 rounded-2xl text-center">
                                         <p className="text-xs text-gray-400 font-medium uppercase mb-1">Status</p>
-                                        <p className="font-bold text-green-600">Present</p>
+                                        <p className="font-bold text-green-600 text-sm">Present ✓</p>
                                     </div>
-                                    <div className="p-4 bg-gray-50 rounded-2xl text-center">
+                                    <div className="p-3 sm:p-4 bg-gray-50 rounded-2xl text-center">
                                         <p className="text-xs text-gray-400 font-medium uppercase mb-1">Time</p>
-                                        <p className="font-bold text-gray-700">{format(new Date(), 'hh:mm a')}</p>
+                                        <p className="font-bold text-gray-700 text-sm">{format(new Date(), 'hh:mm a')}</p>
                                     </div>
                                 </div>
-                                <Button className="w-full mt-8" onClick={() => navigate('/student')}>
+
+                                <Button className="w-full" onClick={() => navigate('/student')}>
                                     Back to Dashboard
                                 </Button>
                             </Card>
                         </motion.div>
                     )}
                 </AnimatePresence>
-
-                {error && (
-                    <div className="mt-8 flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
-                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                        <p className="text-sm font-medium">{error}</p>
-                    </div>
-                )}
-
-                {isScanning && (
-                    <p className="mt-8 text-white/50 animate-pulse font-medium">
-                        Place the QR code inside the frame to scan
-                    </p>
-                )}
             </div>
 
-            {/* Tip */}
-            <div className="p-8 text-center bg-white/5">
-                <p className="text-sm text-white/40 italic">
-                    Tip: Ensure you have a stable internet connection for real-time updates.
+            {/* Footer tip */}
+            <div className="p-6 text-center">
+                <p className="text-xs text-white/30 flex items-center justify-center gap-1.5">
+                    <Zap className="w-3 h-3" />
+                    Ensure stable internet for real-time sync
                 </p>
             </div>
         </div>
