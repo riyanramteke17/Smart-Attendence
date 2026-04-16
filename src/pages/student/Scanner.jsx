@@ -19,7 +19,8 @@ import {
     serverTimestamp,
     query,
     where,
-    getDocs
+    getDocs,
+    updateDoc
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { format } from 'date-fns';
@@ -34,9 +35,19 @@ const ScannerPage = () => {
     const handleScan = async (data) => {
         if (data && isScanning && userData) {
             setIsScanning(false);
-            const classId = data.text;
+            const qrText = data.text;
+            const isDailyQR = qrText.startsWith('admin_qr:');
+            const classId = isDailyQR ? qrText.split(':')[1] : qrText;
 
             try {
+                if (isDailyQR) {
+                    if (new Date().getHours() >= 18) {
+                        toast.error('Daily QR Code has expired (after 6:00 PM)!');
+                        setIsScanning(true);
+                        return;
+                    }
+                }
+
                 const classDoc = await getDoc(doc(db, 'classes', classId));
 
                 if (!classDoc.exists()) {
@@ -47,12 +58,52 @@ const ScannerPage = () => {
 
                 const classData = classDoc.data();
                 if (classData.status !== 'active') {
-                    toast.error('This class session has ended.');
+                    toast.error('This session has ended.');
                     setIsScanning(true);
                     return;
                 }
 
-                // Prevent duplicate attendance
+                if (isDailyQR) {
+                    const attendanceId = `${userData.uid}_${classId}_daily`;
+                    const existingDoc = await getDoc(doc(db, 'attendance', attendanceId));
+
+                    if (existingDoc.exists()) {
+                        const existingData = existingDoc.data();
+                        if (existingData.outTime) {
+                            toast.error('You have already marked OUT for today!');
+                            setScannedClass({ subject: "Daily Campus OUT (Already Marked)" });
+                            return;
+                        } else {
+                            await updateDoc(doc(db, 'attendance', attendanceId), {
+                                outTime: format(new Date(), 'hh:mm a'),
+                                status: 'Signed Out'
+                            });
+                            setScannedClass({ subject: "Daily Campus (OUT Marked)" });
+                            toast.success('OUT Time Marked Successfully!');
+                            return;
+                        }
+                    } else {
+                        await setDoc(doc(db, 'attendance', attendanceId), {
+                            studentId: userData.uid || 'unknown',
+                            userName: userData.name || 'Unknown',
+                            studentName: userData.name || 'Unknown',
+                            studentEmail: userData.email || 'Unknown',
+                            role: userData.role || 'user',
+                            classId: classId || 'unknown',
+                            isDailyQR: true,
+                            date: format(new Date(), 'yyyy-MM-dd'),
+                            inTime: format(new Date(), 'hh:mm a'),
+                            time: format(new Date(), 'hh:mm a'), // fallback
+                            status: 'Signed In',
+                            timestamp: serverTimestamp(),
+                        });
+                        setScannedClass({ subject: "Daily Campus (IN Marked)" });
+                        toast.success('IN Time Marked Successfully!');
+                        return;
+                    }
+                }
+
+                // Prevent duplicate attendance for regular classes
                 const q = query(
                     collection(db, 'attendance'),
                     where('studentId', '==', userData.uid),
@@ -67,13 +118,13 @@ const ScannerPage = () => {
 
                 const attendanceId = `${userData.uid}_${classId}`;
                 await setDoc(doc(db, 'attendance', attendanceId), {
-                    studentId: userData.uid,
-                    studentName: userData.name,
-                    studentEmail: userData.email,
-                    classId,
-                    teacherId: classData.teacherId,
-                    teacherName: classData.teacherName,
-                    subject: classData.subject,
+                    studentId: userData.uid || 'unknown',
+                    studentName: userData.name || 'Unknown',
+                    studentEmail: userData.email || 'Unknown',
+                    classId: classId || 'unknown',
+                    teacherId: classData.teacherId || 'unknown',
+                    teacherName: classData.teacherName || 'Unknown',
+                    subject: classData.subject || 'Unknown',
                     date: format(new Date(), 'yyyy-MM-dd'),
                     time: format(new Date(), 'hh:mm a'),
                     status: 'Present',
@@ -83,8 +134,8 @@ const ScannerPage = () => {
                 setScannedClass(classData);
                 toast.success('Attendance Marked Successfully!');
             } catch (err) {
-                console.error(err);
-                toast.error('Error marking attendance');
+                console.error("Scanning Error:", err);
+                toast.error(err.message || 'Error marking attendance');
                 setIsScanning(true);
             }
         }
@@ -100,7 +151,7 @@ const ScannerPage = () => {
             {/* Header */}
             <div className="px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between relative z-10 bg-gradient-to-b from-black/60 to-transparent">
                 <button
-                    onClick={() => navigate('/student')}
+                    onClick={() => navigate(userData?.role === 'teacher' ? '/teacher' : '/student')}
                     className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
                 >
                     <ArrowLeft className="w-5 h-5" />
@@ -194,7 +245,7 @@ const ScannerPage = () => {
                                     </div>
                                 </div>
 
-                                <Button className="w-full" onClick={() => navigate('/student')}>
+                                <Button className="w-full" onClick={() => navigate(userData?.role === 'teacher' ? '/teacher' : '/student')}>
                                     Back to Dashboard
                                 </Button>
                             </Card>

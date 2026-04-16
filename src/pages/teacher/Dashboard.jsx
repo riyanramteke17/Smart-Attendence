@@ -43,6 +43,7 @@ import {
     updateDoc
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import ScannerPage from '../student/Scanner';
 
 // ─── Sub Pages ───────────────────────────────────────────────
 
@@ -460,6 +461,7 @@ const TeacherDashboard = () => {
         <DashboardLayout role="teacher">
             <Routes>
                 <Route index element={<TeacherHome userData={userData} />} />
+                <Route path="scan" element={<ScannerPage />} />
                 <Route path="classes" element={<TeacherClasses userData={userData} />} />
                 <Route path="reports" element={<TeacherReports userData={userData} />} />
                 <Route path="students" element={<TeacherStudents />} />

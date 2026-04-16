@@ -9,7 +9,8 @@ import {
     MoreHorizontal,
     Mail,
     ShieldAlert,
-    BarChart3
+    BarChart3,
+    QrCode
 } from 'lucide-react';
 import { DashboardLayout } from '../../components/DashboardLayout';
 import { Card, Button } from '../../components/UI';
@@ -38,6 +39,8 @@ import {
 import { db } from '../../lib/firebase';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import QRCode from 'react-qr-code';
+import { addDoc } from 'firebase/firestore';
 
 // ─── Sub Pages ───────────────────────────────────────────────
 
@@ -392,6 +395,160 @@ const AdminAnalytics = () => {
     );
 };
 
+const AdminDailyQR = () => {
+    const [dailySession, setDailySession] = useState(null);
+
+    useEffect(() => {
+        const q = query(collection(db, 'classes'), where('status', '==', 'active'), where('isDailyQR', '==', true));
+        const unsub = onSnapshot(q, snap => {
+            if (!snap.empty) {
+                const session = snap.docs[0];
+                setDailySession({ id: session.id, ...session.data() });
+            } else {
+                setDailySession(null);
+            }
+        });
+        return unsub;
+    }, []);
+
+    const generateQR = async () => {
+        try {
+            const sessionData = {
+                subject: 'Daily Campus Session',
+                isDailyQR: true,
+                date: format(new Date(), 'yyyy-MM-dd'),
+                createdAt: new Date().toISOString(),
+                status: 'active'
+            };
+            const docRef = await addDoc(collection(db, 'classes'), sessionData);
+            setDailySession({ id: docRef.id, ...sessionData });
+            toast.success("Generated today's QR code!");
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to generate QR: " + e.message);
+        }
+    };
+
+    const disableQR = async () => {
+        if (!dailySession) return;
+        try {
+            await updateDoc(doc(db, 'classes', dailySession.id), { status: 'expired' });
+            toast.success("QR Code disabled.");
+        } catch(e) {
+            toast.error("Failed to disable QR");
+        }
+    };
+
+    const isExpiredTime = new Date().getHours() >= 18;
+
+    return (
+        <div className="flex flex-col gap-8 items-center">
+            <div className="w-full">
+                <h1 className="text-3xl font-bold text-gray-800">Daily Campus QR</h1>
+                <p className="text-gray-500 mt-1">Generate a single QR for daily IN/OUT attendance.</p>
+            </div>
+            
+            <Card className="max-w-md w-full flex flex-col items-center py-10">
+                {!dailySession ? (
+                    <div className="flex flex-col items-center gap-6">
+                        <div className="w-24 h-24 bg-gray-100 rounded-2xl flex items-center justify-center">
+                            <QrCode className="w-10 h-10 text-gray-400" />
+                        </div>
+                        <p className="text-gray-500 text-center">No active session for today. Users will not be able to mark IN/OUT.</p>
+                        <Button onClick={generateQR} className="w-full">Generate Today's QR</Button>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center gap-6 w-full">
+                        <div className="flex w-full justify-between items-center mb-2 px-4">
+                            <span className="bg-green-100 text-green-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">Active</span>
+                            <span className="text-sm font-medium text-gray-500">{dailySession.date}</span>
+                        </div>
+                        
+                        <div className="bg-white p-6 rounded-3xl shadow-inner border border-gray-100">
+                            <QRCode value={`admin_qr:${dailySession.id}`} size={256} />
+                        </div>
+                        
+                        <div className="text-center">
+                            <h3 className="text-xl font-bold text-gray-800">Scan to mark IN / OUT</h3>
+                            <p className="text-sm text-gray-400 mt-2">QR code will automatically stop working at 06:00 PM.</p>
+                            {isExpiredTime && <p className="text-sm text-red-500 font-bold mt-1">It is past 6:00 PM. Scans will be rejected.</p>}
+                        </div>
+                        
+                        <Button variant="outline" className="w-full text-red-500 border-red-200 hover:bg-red-50" onClick={disableQR}>
+                            Deactivate QR Now
+                        </Button>
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+};
+
+const AdminDailyLogs = () => {
+    const [logs, setLogs] = useState([]);
+    
+    useEffect(() => {
+        // Find only attendance docs that belong to our Daily Campus Sessions
+        const q = query(collection(db, 'attendance'), where('isDailyQR', '==', true));
+        const unsub = onSnapshot(q, snap => {
+            const data = snap.docs.map(d => ({id: d.id, ...d.data()}))
+                .sort((a,b) => {
+                    const timeA = new Date((a.date || '') + ' ' + (a.inTime || a.time || ''));
+                    const timeB = new Date((b.date || '') + ' ' + (b.inTime || b.time || ''));
+                    return timeB - timeA;
+                });
+            setLogs(data);
+        });
+        return unsub;
+    }, []);
+
+    return (
+        <div className="flex flex-col gap-8">
+            <h1 className="text-3xl font-bold text-gray-800">Daily Campus Logs</h1>
+            <Card>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead><tr className="border-b border-gray-100">
+                            <th className="pb-4 font-semibold text-gray-500 text-sm">User</th>
+                            <th className="pb-4 font-semibold text-gray-500 text-sm">Role</th>
+                            <th className="pb-4 font-semibold text-gray-500 text-sm">Date</th>
+                            <th className="pb-4 font-semibold text-gray-500 text-sm text-center">IN Time</th>
+                            <th className="pb-4 font-semibold text-gray-500 text-sm text-center">OUT Time</th>
+                        </tr></thead>
+                        <tbody className="divide-y divide-gray-50">
+                            {logs.map((log) => (
+                                <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
+                                    <td className="py-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs uppercase">{log.studentName?.charAt(0) || log.userName?.charAt(0) || 'U'}</div>
+                                            <span className="font-bold text-gray-700">{log.studentName || log.userName || 'Anonymous'}</span>
+                                        </div>
+                                    </td>
+                                    <td className="py-4">
+                                        <span className="bg-gray-100 text-gray-600 text-[10px] font-bold uppercase px-2 py-1 rounded-full">{log.role || 'student'}</span>
+                                    </td>
+                                    <td className="py-4 text-sm font-medium text-gray-600">{log.date}</td>
+                                    <td className="py-4 text-sm text-center">
+                                        <span className="bg-blue-50 text-blue-600 font-bold px-3 py-1 rounded-lg">{log.inTime || log.time || '—'}</span>
+                                    </td>
+                                    <td className="py-4 text-sm text-center">
+                                        {log.outTime ? (
+                                            <span className="bg-purple-50 text-purple-600 font-bold px-3 py-1 rounded-lg">{log.outTime}</span>
+                                        ) : (
+                                            <span className="text-gray-400 font-medium">—</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                            {logs.length === 0 && (<tr><td colSpan="5" className="py-8 text-center text-gray-400">No logs found</td></tr>)}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+        </div>
+    );
+};
+
 // ─── Main Export ─────────────────────────────────────────────
 
 const AdminDashboard = () => {
@@ -401,6 +558,8 @@ const AdminDashboard = () => {
                 <Route index element={<AdminHome />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="analytics" element={<AdminAnalytics />} />
+                <Route path="daily-qr" element={<AdminDailyQR />} />
+                <Route path="daily-logs" element={<AdminDailyLogs />} />
             </Routes>
         </DashboardLayout>
     );

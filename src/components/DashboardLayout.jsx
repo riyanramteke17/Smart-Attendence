@@ -17,7 +17,8 @@ import { cn } from '../utils/utils';
 const menuItems = {
     teacher: [
         { path: '/teacher', icon: LayoutDashboard, label: 'Dashboard' },
-        { path: '/teacher/classes', icon: QrCode, label: 'Classes' },
+        { path: '/teacher/scan', icon: QrCode, label: 'Scan QR' },
+        { path: '/teacher/classes', icon: Users, label: 'Classes' },
         { path: '/teacher/reports', icon: FileText, label: 'Reports' },
         { path: '/teacher/students', icon: Users, label: 'Students' },
     ],
@@ -30,6 +31,8 @@ const menuItems = {
         { path: '/admin', icon: LayoutDashboard, label: 'Overview' },
         { path: '/admin/users', icon: Users, label: 'Users' },
         { path: '/admin/analytics', icon: BarChart3, label: 'Analytics' },
+        { path: '/admin/daily-qr', icon: QrCode, label: 'Daily QR' },
+        { path: '/admin/daily-logs', icon: FileText, label: 'Daily Logs' },
     ]
 };
 
