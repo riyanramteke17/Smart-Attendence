@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import QrScanner from 'react-qr-scanner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -29,11 +29,14 @@ const ScannerPage = () => {
     const { userData } = useAuth();
     const [error, setError] = useState(null);
     const [isScanning, setIsScanning] = useState(true);
+    const isProcessing = useRef(false);
     const [scannedClass, setScannedClass] = useState(null);
     const navigate = useNavigate();
 
     const handleScan = async (data) => {
         if (data && isScanning && userData) {
+            if (isProcessing.current) return;
+            isProcessing.current = true;
             setIsScanning(false);
             const qrText = data.text;
             const isDailyQR = qrText.startsWith('admin_qr:');
@@ -44,6 +47,7 @@ const ScannerPage = () => {
                     if (new Date().getHours() >= 18) {
                         toast.error('Daily QR Code has expired (after 6:00 PM)!');
                         setIsScanning(true);
+                        isProcessing.current = false;
                         return;
                     }
                 }
@@ -53,6 +57,7 @@ const ScannerPage = () => {
                 if (!classDoc.exists()) {
                     toast.error('Invalid QR Code');
                     setIsScanning(true);
+                    isProcessing.current = false;
                     return;
                 }
 
@@ -60,6 +65,7 @@ const ScannerPage = () => {
                 if (classData.status !== 'active') {
                     toast.error('This session has ended.');
                     setIsScanning(true);
+                    isProcessing.current = false;
                     return;
                 }
 
@@ -137,6 +143,7 @@ const ScannerPage = () => {
                 console.error("Scanning Error:", err);
                 toast.error(err.message || 'Error marking attendance');
                 setIsScanning(true);
+                isProcessing.current = false;
             }
         }
     };
